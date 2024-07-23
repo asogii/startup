@@ -1,0 +1,162 @@
+#!/bin/bash
+
+: ${START_UP_PATH:=~/.startup}
+: ${START_UP_CONFIG_PATH:=$START_UP_PATH/startup.config}
+: ${START_UP_KILL_WAIT_TIME:=10}
+: ${START_UP_TIME_ZONE:=Asia/Shanghai}
+
+mkdir -p $START_UP_PATH/states
+cd $START_UP_PATH/states
+
+log() {
+	echo "[$(TZ=$START_UP_TIME_ZONE date '+%F %T.%N')]$@"
+}
+_start() {
+	name=$1; shift
+	log "starting $name"
+	pid=`cat $name.pid 2>/dev/null`
+	ps $pid > /dev/null 2>&1
+	if [ $? -eq 0 ] && [[ "`ps $pid -o lstart=`" == "`cat $name.lstart 2>/dev/null`" ]]; then
+		log "$name already running"
+	else
+		output=$1; shift
+		nohup $@ >> $output 2>&1 &
+		pid=$!
+		echo $pid > $name.pid
+		ps $pid -o lstart= > $name.lstart
+		log "$name start"
+	fi
+}
+_validate_and_start() {
+	parsed=`eval "echo $1 | xargs"`
+	[ -n "$parsed" ] && _start $parsed || return 1
+}
+_kill() {
+	kill $1
+	retry=0
+	while kill -0 $1 2>/dev/null && [ $retry -lt $START_UP_KILL_WAIT_TIME ]; do
+		sleep 1s
+		let retry++
+	done
+	if [ $retry -eq $START_UP_KILL_WAIT_TIME ]; then
+		log "kill $1 failed, use kill -9"
+		kill -9 $1
+		retry=0
+		while kill -0 $1 2>/dev/null && [ $retry -lt $START_UP_KILL_WAIT_TIME ]; do
+			sleep 1s
+			let retry++
+		done
+		if [ $retry -eq $START_UP_KILL_WAIT_TIME ]; then
+			log "kill -9 $1 failed"
+		fi
+	fi
+}
+start() {
+	if [ $# -eq 0 ]; then
+		if [ -f $START_UP_CONFIG_PATH ]; then
+			while read start_config; do
+				if [ -n "$start_config" ]; then
+					_validate_and_start "$start_config"
+				fi
+			done < $START_UP_CONFIG_PATH
+		else
+			log "no config found at $START_UP_CONFIG_PATH"
+		fi
+	else
+		for name in "$@"; do
+			start_config=`cat $START_UP_CONFIG_PATH 2>/dev/null | grep -m 1 "^$name\s"`
+			if [ -n "$start_config" ]; then
+				_validate_and_start "$start_config" || log "no valid config found for $name"
+			else
+				log "no config found for $name"
+			fi
+		done
+	fi
+}
+stop() {
+	if [ $# -eq 0 ]; then
+		for pid_file in *.pid; do
+			name="${pid_file%.*}"
+			pid=`cat $pid_file`
+			lstart=`cat $name.lstart 2>/dev/null`
+			running_lstart=`ps $pid -o lstart= 2>/dev/null`
+			if [ -n "$lstart" ] && [[ "$lstart" == "$running_lstart" ]]; then
+				_kill $pid
+				log "$name($pid) killed"
+			else
+				log "$name is down, running_lstart: $running_lstart"
+			fi
+		done
+	else
+		for name in "$@"; do
+			pid=`cat $name.pid 2>/dev/null`
+			if [ -z "$pid" ]; then
+				log "$name is not configured or not running"
+			elif [[ "`ps $pid -o lstart=`" == "`cat $name.lstart 2>/dev/null`" ]]; then
+				_kill $pid
+				log "$name($pid) killed"
+			else
+				log "$name is not running"
+			fi
+		done
+	fi
+}
+restart() {
+	if [ $# -eq 0 ]; then
+		stop; start
+	elif [ -f $START_UP_CONFIG_PATH ]; then
+		for name in "$@"; do
+			pid=`cat $name.pid 2>/dev/null`
+			start_config=`cat $START_UP_CONFIG_PATH | grep -m 1 "^$name\s"`
+			if [[ -z "$start_config" ]]; then
+				log "no config found for $name"
+			elif [[ "`ps $pid -o lstart=`" == "`cat $name.lstart 2>/dev/null`" ]]; then
+				_kill $pid
+				log "$name($pid) killed"
+				_validate_and_start "$start_config" || log "$name configuration is not valid"
+			else
+				log "$name is not running"
+				_validate_and_start "$start_config" || log "$name configuration is not valid"
+			fi
+		done
+	else
+		log "no config found at $START_UP_CONFIG_PATH"
+	fi
+}
+status() {
+	for pid_file in *.pid; do
+		name="${pid_file%.*}"
+		pid=`cat $pid_file`
+		lstart=`cat $name.lstart 2>/dev/null`
+		log "$name($pid) lstart: $lstart"
+		running_lstart=`ps $pid -o lstart= 2>/dev/null`
+		if [ -n "$lstart" ] && [[ "$lstart" == "$running_lstart" ]]; then
+			log "$name is running"
+		else
+			log "$name is down, running_lstart: $running_lstart"
+		fi
+	done
+}
+
+if [ $# -eq 0 ]; then
+	echo "please specify command: start | stop | restart | status | run"
+else
+	cmd=$1; shift
+	case "$cmd" in
+		"start")
+			start $@ ;;
+		"stop")
+			stop $@ ;;
+		"restart")
+			restart $@ ;;
+		"status")
+			status $@ ;;
+		"run")
+			_start $@ ;;
+		"commands")
+			echo "start stop restart status" ;;
+		*)
+			echo "command invalid: $cmd" ;;
+	esac
+fi
+
