@@ -154,7 +154,7 @@ else
 		"run")
 			_start $@ ;;
 		"commands")
-			echo "start stop restart status" ;;
+			echo "start stop restart status run" ;;
 		*)
 			echo "command invalid: $cmd" ;;
 	esac
