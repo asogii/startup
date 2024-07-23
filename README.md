@@ -3,25 +3,25 @@
 designed to make sure a specified process singleton
 
 ## usage:
-`startup start [ALIAS]...`
+- `startup start [ALIAS]...`
 
-start specified process(es) configured in config file or all processes if no specified alias
+    start specified process(es) configured in config file or all processes if no specified alias
 
-`startup stop [ALIAS]...`
+- `startup stop [ALIAS]...`
 
-stop specified process(es) or all processes if no specified alias
+    stop specified process(es) or all processes if no specified alias
 
-`startup restart [ALIAS]...`
+- `startup restart [ALIAS]...`
 
-restart specified process(es) configured in config file or all processes if no specified alias
+    restart specified process(es) configured in config file or all processes if no specified alias
 
-`startup status`
+- `startup status`
 
-show all process status
+    show all process status
 
-`startup run ALIAS LOGTO COMMAND`
+- `startup run ALIAS LOGTO COMMAND`
 
-directly run a command as specified alias
+    directly run a command as specified alias
 
 ## config:
 
