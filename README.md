@@ -24,6 +24,7 @@ default config file path:
 `$HOME/.startup/startup.config`
 
 config file consists of lines of process configs, each line present one process config
+
 config line format:
 `ALIAS LOGTO COMMAND`
 
