@@ -73,30 +73,31 @@ start() {
 		done
 	fi
 }
+_try_stop() {
+	pid=$1; name=$2
+	lstart=`cat $name.lstart 2>/dev/null`
+	running_lstart=`ps $pid -o lstart= 2>/dev/null`
+	if [ -n "$lstart" ] && [[ "$lstart" == "$running_lstart" ]]; then
+		_kill $pid
+		log "$name($pid) killed"
+	else
+		log "$name is down, running_lstart: $running_lstart"
+	fi
+}
 stop() {
 	if [ $# -eq 0 ]; then
 		for pid_file in *.pid; do
 			name="${pid_file%.*}"
 			pid=`cat $pid_file`
-			lstart=`cat $name.lstart 2>/dev/null`
-			running_lstart=`ps $pid -o lstart= 2>/dev/null`
-			if [ -n "$lstart" ] && [[ "$lstart" == "$running_lstart" ]]; then
-				_kill $pid
-				log "$name($pid) killed"
-			else
-				log "$name is down, running_lstart: $running_lstart"
-			fi
+			_try_stop $pid $name
 		done
 	else
 		for name in "$@"; do
 			pid=`cat $name.pid 2>/dev/null`
 			if [ -z "$pid" ]; then
 				log "$name is not configured or not running"
-			elif [[ "`ps $pid -o lstart=`" == "`cat $name.lstart 2>/dev/null`" ]]; then
-				_kill $pid
-				log "$name($pid) killed"
 			else
-				log "$name is not running"
+				_try_stop $pid $name
 			fi
 		done
 	fi
@@ -110,12 +111,8 @@ restart() {
 			start_config=`cat $START_UP_CONFIG_PATH | grep -m 1 "^$name\s"`
 			if [[ -z "$start_config" ]]; then
 				log "no config found for $name"
-			elif [[ "`ps $pid -o lstart=`" == "`cat $name.lstart 2>/dev/null`" ]]; then
-				_kill $pid
-				log "$name($pid) killed"
-				_validate_and_start "$start_config" || log "$name configuration is not valid"
 			else
-				log "$name is not running"
+				_try_stop $pid $name
 				_validate_and_start "$start_config" || log "$name configuration is not valid"
 			fi
 		done
