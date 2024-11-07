@@ -74,7 +74,7 @@ start() {
 	fi
 }
 _try_stop() {
-	pid=$1; name=$2
+	name=$1; pid=$2
 	lstart=`cat $name.lstart 2>/dev/null`
 	running_lstart=`ps $pid -o lstart= 2>/dev/null`
 	if [ -n "$lstart" ] && [[ "$lstart" == "$running_lstart" ]]; then
@@ -89,7 +89,7 @@ stop() {
 		for pid_file in *.pid; do
 			name="${pid_file%.*}"
 			pid=`cat $pid_file`
-			_try_stop $pid $name
+			_try_stop $name $pid
 		done
 	else
 		for name in "$@"; do
@@ -97,7 +97,7 @@ stop() {
 			if [ -z "$pid" ]; then
 				log "$name is not configured or not running"
 			else
-				_try_stop $pid $name
+				_try_stop $name $pid
 			fi
 		done
 	fi
@@ -112,7 +112,7 @@ restart() {
 			if [[ -z "$start_config" ]]; then
 				log "no config found for $name"
 			else
-				_try_stop $pid $name
+				_try_stop $name $pid
 				_validate_and_start "$start_config" || log "$name configuration is not valid"
 			fi
 		done
