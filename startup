@@ -76,7 +76,11 @@ start() {
 _try_stop() {
 	name=$1; pid=$2
 	lstart=`cat $name.lstart 2>/dev/null`
-	running_lstart=`ps $pid -o lstart= 2>/dev/null`
+	if [ -z "$pid" ]; then
+		running_lstart="never run"
+	else
+		running_lstart=`ps $pid -o lstart= 2>/dev/null`
+	fi
 	if [ -n "$lstart" ] && [[ "$lstart" == "$running_lstart" ]]; then
 		_kill $pid
 		log "$name($pid) killed"
