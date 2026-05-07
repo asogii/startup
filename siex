@@ -47,7 +47,7 @@ _scan_config_integrity() {
     local line_num=0
     
     while read -r line; do
-        let line_num++
+        ((line_num++))
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
         [[ "$line" != *"|"* ]] && continue
         
@@ -208,6 +208,10 @@ _do_start() {
 
     if [[ "$cmd_bin" == @* ]]; then
         local url="${cmd_bin#@}"
+        if [ -z "$url" ]; then
+            log "[$name] download URL is empty"
+            return 1
+        fi
         bin_file="$STATE_DIR/$name"
         rm -f "$bin_file"
         if ! _download_file "$url" "$bin_file"; then
@@ -219,18 +223,33 @@ _do_start() {
         set -- "$bin_file" "$@"
     fi
 
-    local marker="$(date +%s)_$((RANDOM%1000))"
-    echo ":$marker" > "$pfile"
+    local marker="$(date +%s)_${RANDOM}${RANDOM}${RANDOM}"
+    echo ":$marker" > "$pfile.tmp"
+    mv "$pfile.tmp" "$pfile"
     export "$MARKER_NAME"="$marker"
 
     nohup bash -c 'exec "$@"' -- "$@" < /dev/null >> "$output" 2>&1 &
     local new_pid=$!
     
-    echo "$new_pid:$marker" > "$pfile"
+    echo "$new_pid:$marker" > "$pfile.tmp"
+    mv "$pfile.tmp" "$pfile"
     log "[$name] started (pid: $new_pid)"
 
     if [ -n "$bin_file" ]; then
-        sleep 0.5 
+        # Wait for the process to be alive, then delete the binary.
+        # Poll with marker check: once the process has our env marker,
+        # exec is safely complete (ELF in memory, script interpreter loaded).
+        local deadline=$(( $(date +%s) + 2 ))
+        while [ $(date +%s) -le $deadline ]; do
+            if kill -0 "$new_pid" 2>/dev/null; then
+                local actual_mark=$(_get_marker "$new_pid" 2>/dev/null || true)
+                if [ -n "$actual_mark" ]; then
+                    break
+                fi
+            fi
+            sleep 0.1
+        done
+        sleep 0.2
         rm -f "$bin_file" 2>/dev/null
     fi
 }
@@ -242,7 +261,7 @@ _do_stop() {
         kill "$pid"
         local retry=0
         while kill -0 "$pid" 2>/dev/null && [ $retry -lt $KILL_WAIT ]; do
-            sleep 1; let retry++
+            sleep 1; ((retry++))
         done
         [ $retry -eq $KILL_WAIT ] && kill -9 "$pid"
         rm -f "$pfile"
@@ -391,4 +410,3 @@ else
         *)         echo "Invalid command: $cmd" ;;
     esac
 fi
-

@@ -69,6 +69,50 @@ echo ":$MARKER" > "$PID_FILE"
 RECOVERED_PID=$(cat "$PID_FILE" | cut -d: -f1)
 [ "$RECOVERED_PID" == "$PID" ] && pass "Ghost recovered" || fail "Recovery failed"
 
+info "Test 3b: Ghost recovery fails gracefully when marked process is gone"
+# Simulate: crash happened after :marker write, but process already dead
+ORIG_MARKER=$(cat "$PID_FILE" | cut -d: -f2)
+"$SIEX_SCRIPT" stop local_app
+echo ":$ORIG_MARKER" > "$PID_FILE"
+
+STATUS_OUTPUT=$("$SIEX_SCRIPT" status local_app 2>&1 || true)
+if echo "$STATUS_OUTPUT" | grep -qi "DOWN"; then
+    pass "Ghost: dead marker correctly shows DOWN"
+else
+    echo "Status output: $STATUS_OUTPUT"
+    fail "Ghost: expected DOWN for dead process"
+fi
+
+"$SIEX_SCRIPT" start local_app
+if [ -f "$PID_FILE" ]; then
+    NEW_PID="$(cat "$PID_FILE" | cut -d: -f1)"
+    [ -n "$NEW_PID" ] && pass "Ghost: clean restart after dead ghost" || fail "Ghost: restart produced empty PID"
+else
+    fail "Ghost: restart after dead ghost failed"
+fi
+
+info "Test 3c: Ghost marker mismatch when PID reused by non-siex process"
+# Simulate: old PID file points to a PID whose marker doesn't match
+GHOST_PID=$(cat "$PID_FILE" | cut -d: -f1)
+"$SIEX_SCRIPT" stop local_app
+
+# Write PID file with a WRONG marker (simulating another process on that PID)
+echo "$GHOST_PID:FAKE_MARKER_XYZ" > "$PID_FILE"
+
+# status should see the PID exists but marker doesn't match → DOWN
+STATUS_OUTPUT=$("$SIEX_SCRIPT" status local_app 2>&1 || true)
+if echo "$STATUS_OUTPUT" | grep -qi "DOWN"; then
+    pass "Mismatch: marker mismatch correctly shows DOWN"
+else
+    echo "Status output: $STATUS_OUTPUT"
+    fail "Mismatch: expected DOWN for marker mismatch"
+fi
+
+# Clean up and restart to leave state consistent
+rm -f "$PID_FILE"
+"$SIEX_SCRIPT" start local_app
+[ -f "$PID_FILE" ] && pass "Mismatch: clean restart after marker mismatch" || fail "Mismatch: restart failed"
+
 info "Test 4: Remote Download (@url)"
 "$SIEX_SCRIPT" start remote_app
 R_PID_FILE="$TEST_ROOT/states/remote_app.pid"
@@ -76,6 +120,36 @@ if [ -f "$R_PID_FILE" ]; then
     pass "Remote App started"
 else
     fail "Remote PID missing"
+fi
+
+info "Test 4b: Binary cleanup after @url download"
+# Use 'siex run' to test @url; doesn't touch the config file
+RUN_CMD="cleanup_test | $TEST_ROOT/logs/cleanup.log | @file://${TEST_DIR}/dummy_worker.sh"
+CLEANUP_OUTPUT=$("$SIEX_SCRIPT" run "$RUN_CMD" 2>&1)
+CLEANUP_PID_FILE="$TEST_ROOT/states/cleanup_test.pid"
+CLEANUP_BIN="$TEST_ROOT/states/cleanup_test"
+
+# The service should start successfully
+if [ ! -f "$CLEANUP_PID_FILE" ]; then
+    echo "Output: $CLEANUP_OUTPUT"
+    fail "Cleanup: service failed to start"
+fi
+pass "Cleanup: service started"
+
+# The downloaded binary must be deleted after start
+if [ ! -f "$CLEANUP_BIN" ]; then
+    pass "Cleanup: binary file successfully removed"
+else
+    ls -la "$CLEANUP_BIN"
+    fail "Cleanup: binary file was NOT deleted"
+fi
+
+# No error messages should appear during startup
+if echo "$CLEANUP_OUTPUT" | grep -qi "error"; then
+    echo "Output: $CLEANUP_OUTPUT"
+    fail "Cleanup: errors detected during startup"
+else
+    pass "Cleanup: no errors during startup"
 fi
 
 info "Test 5: Restart Logic"
